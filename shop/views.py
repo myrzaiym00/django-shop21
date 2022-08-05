@@ -1,9 +1,11 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import mixins
+from rest_framework import mixins, filters
 from rest_framework.viewsets import ModelViewSet, GenericViewSet
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, action
 from rest_framework.response import Response
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 from .models import Product, Category, Comment, Like, Rating
 from .serializers import ProductSerializer, CategorySerializer, CommentSerializer
@@ -13,6 +15,34 @@ class ProductViewSet(ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['title', 'price']
+
+    def get_serializer_context(self):
+        context =  super().get_serializer_context()
+        context["request"] = self.request
+        return context
+
+    @swagger_auto_schema(manual_parameters=[openapi.Parameter('title', openapi.IN_QUERY, 'search products by title', type=openapi.TYPE_STRING)])
+
+
+    @action(methods=['GET'], detail=False)
+    def search(self, request):
+        title = request.query_params.get('title')
+        queryset = self.get_queryset()
+        if title:
+            queryset = queryset.filter(title__icontains=title)
+        
+        serializer = ProductSerializer(queryset, many=True, context={'request':request})
+        return Response(serializer.data, 200)
+
+    @action(methods=["GET"], detail=False)
+    def order_by_rating(self, request):
+        queryset = self.get_queryset()
+
+        queryset = sorted(queryset, key=lambda product: product.average_rating, reverse=True)
+        serializer = ProductSerializer(queryset, many=True, context={"request":request})
+        return Response(serializer.data, 200)
 
 class CategoryViewSet(mixins.CreateModelMixin, 
                     mixins.DestroyModelMixin, 
